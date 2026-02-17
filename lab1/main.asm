@@ -20,35 +20,44 @@ _start:
 	movsx rbx, r9d	;поместили b в rbx (расширили, чтобы потом сложить)
 	
 	add rbx, r10 	;(b+c) и результат в rbx
+	jo _error	;перескок если переполнение
 	imul rax, rbx 	;a*(b+c) и результат в rax (imul умножает числа со знаком). Если возникло переполнение, то оно уйдет в rdx
-	
+	jo _error	;перескок если переполнение
+		
 	movsx r13d, r12b ;временная копия e (расширяем до a для послед. сложения)
 	movsx r14, r11w ;временная копия d (потом сюда положем результат умножения)
 	
 	add r13d, r8d 	;(e+a) и результат в r13d
+	jo _error
 	movsx r13, r13d ;расширили для послед умножения + вычитания
 	imul r14, r13 	;d*(e+a) и результат в r14
-
+	jo _error
+	
 	sub rax, r14 	;a*(b+c) - d*(e+a) и результат в rax
+	jo _error
 	;подсчитал числитель
 
 
 
 	movsx rbx, r11w ;копируем d в rbx с расширением для посл. вычитания
 	imul rbx, rbx 	;находит d^2 и помещаем в rbx
-	
+	jo _error
+
 	mov r14, r10 	;помещаем копию c в r14
 	imul r14, r14 	;квадрат c^2 и поместил в r14
-	
+	jo _error
+		
 	movsx r13, r9d 	;расширяем b для послед. умножения
 	imul r14, r13 	;c^2*b и результат в r14
+	jo _error
 
 	sub rbx, r14 	;d^2 - c^2*b и результат в rbx
+	jo _error
 	;посчитал знаменатель
 	
 
 	cmp rbx, 0 	;сравнение
-	je _zero_dev	;jump if equal перескок на метку devision_zero (флаг ZF если равенство)
+	je _error	;jump if equal перескок на метку devision_zero (флаг ZF если равенство)
 	
 	cqo 		;мы не можем делить 64 разр на 64 разр. Надо расширить rax до 8х слова в RDX:RAX
 	idiv rbx 	;делим на знаменатель. Частное будет в RAX, а остаток в RDX
@@ -60,7 +69,7 @@ _start:
 	xor rdi, rdi
 	syscall
 
-_zero_dev:
+_error:
 	mov rax, 60
-	mov rdi, 1 	;код ошибки 1(деление на 0)
+	mov rdi, 1 	;код ошибки 1
 	syscall
