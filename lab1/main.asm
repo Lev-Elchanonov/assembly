@@ -65,11 +65,14 @@ _start:
 	mov [res], rdx 	;запись в значение по адресу result
 	mov [rem], rax 	;запись в значение по адресу remainder
 	
-	mov rax, 60 	;exit
 	xor rdi, rdi
-	syscall
+	jmp _exit
 
 _error:
+	mov rdi, 1
+
+_exit:
 	mov rax, 60
-	mov rdi, 1 	;код ошибки 1
 	syscall
+
+
