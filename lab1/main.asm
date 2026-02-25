@@ -8,7 +8,7 @@ section .data
 	res: dq 0
 	rem: dq 0
 section .text
-	global _start
+	global _start 	;делает метку global видимой для линковщика
 _start:
 	mov r8d, [a] 	;a - адрес, [a] - значение по адресу
 	mov r9d, [b]
