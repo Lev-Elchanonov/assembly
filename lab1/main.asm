@@ -1,9 +1,9 @@
 section .data
-	a: dd -5 	;dd = define dword
-	b: dd 3
-	c: dq 2 	;dq = define qword
-	d: dw 4 	;dw = define word
-	e: db 1 	;db = define byte
+	a: dd 1 	;dd = define dword
+	b: dd 1
+	c: dq 0x40000000	;dq = define qword
+	d: dw 0x4000 	;dw = define word
+	e: db 0 	;db = define byte
 
 	res: dq 0
 	rem: dq 0
@@ -54,9 +54,7 @@ _start:
 	sub rbx, r14 	;d^2 - c^2*b и результат в rbx
 	jo _error
 	;посчитал знаменатель
-	
 
-	cmp rbx, 0 	;сравнение
 	je _error	;jump if equal перескок на метку devision_zero (флаг ZF если равенство)
 	
 	cqo 		;мы не можем делить 64 разр на 64 разр. Надо расширить rax до 8х слова в RDX:RAX
