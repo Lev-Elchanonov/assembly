@@ -1,32 +1,38 @@
 section .data
-	matrix_cals:	db 3
-	matrix_rows: 	db 4
-
-	maxrix:		db 5, 2, 9, 1
-			db -3, 7, -1, 4
-			db 8. 0. -5, 6
+	matrix_cols:	db 4
+	matrix_rows: 	db 3
 	
-	sort_direction: 0
 
+	matrix:		db 5, 2, 9, 1
+			db -3, 7, -1, 4
+			db 8, 0, -5, 6
+	
+	sort_direction: db 0
+
+section .bss
+	temp_byte: resb 1
 section .text
-	global: _start
+	global _start
+
 
 _start:
 	mov 	rsi, matrix		;rsi это адрес начала матрицы
-	movzx	rcx, [matrix_rows]	;занулили rcx перед тем как положить количество строк
+	xor	rcx, rcx
+	mov	cl, [matrix_rows]	;занулили rcx перед тем как положить количество строк
 
-;ГЛАВАЯ СЕКЦИЯ ПЕРЕХОДА ПО СТРОКАМ	
+;ГЛАВНАЯ СЕКЦИЯ ПЕРЕХОДА ПО СТРОКАМ	
 row_loop:
 	push	 rcx			;сохранили количество строк
 	push	 rsi			;сохранили адрес нначала матрицы
 	
-	mov	 rdi, rsi		;rdi - адрес текущей строки)
-	mov	 rdx, [matrix_cols]	;rdx - длина строки
+	mov	 rdi, rsi		;rdi - адрес текущей строки
+	xor	 rdx, rdx
+	mov	 dl, [matrix_cols]	;rdx - длина строки
 	
-	call	 heap_sort
-
+	call	heap_sort_row
 	pop 	rsi			;возвращаем инфу о началаа матрицы
-	movzx	rax, [matrix_cols]	;rax - длина строки
+	xor	rax, rax
+	mov	al, [matrix_cols]	;rax - длина строки
 	add	rsi, rax		;rsi укзывает теперь на следующую сточку
 
 	pop	rcx			;восстановили счетчик строк
@@ -37,29 +43,173 @@ row_loop:
 	mov	rax, 60
 	xor	rdi, rdi
 	syscall
-
-
-heap_sort:
-	push 	rbx
+heap_sort_row:
+	push	rbp
+	mov	rbp, rsp
+	
+	push	rbx
 	push	r12
 	push	r13
 	
-	mov 	r12, rdi		;r12 содержит инфу о текущей строки
-	mov	r13, rdx		;адрес длины строки
+	mov 	r12, rdi		;r12 содержит адрес начала текущей строки
+	mov	r13, rdx		;длина строки
 
-	mov 	rbx, r13
-	shr	rbx			;rbx = n/2 
-	dec	rbx			;rbx = n/2 - 1 - узнали верхушку
+	mov 	rcx, r13
+	shr	rcx, 1			;rbx = n/2 (просто обрезает последний бит)
+	dec	rcx			;rbx = n/2 - 1 - узнали верхушку
+	
 
+;СНАЧАЛА ПРЕВРАЩАЕМ НАШУ СТРОКУ В КУЧУ
 build_heap:
-	cmp 	rbx, 0			
+	cmp 	rcx, 0			
 	jl	sort_start		;если rbx < 0, то мы просмотрели все родительские узлы, а значит можно перейти к сортировке
 	
-	mov	rdi, r12
-	mov	rsi, rbx
-	mov	rdx, r13
+	mov	rdi, r12		;поместили rdi в инфу о текущей строке
+	mov	rsi, rcx		;индекс текущего узла
+	mov	rdx, r13		;rdx - размер строки
 	call 	heapify
 
 
-	dec 	rbx			;переходим к след. родительскому узлу
+	dec 	rcx			;переходим к след. родительскому узлу
 	jmp	build_heap		;начинаем процедуру построения кучи для нового родительского узла
+
+;ФАЗА СОРТИРОВКИ
+sort_start:
+	mov	rbx, r13		;rbx - длина строки
+	dec	rbx			;rbx - индекс последнего элемента в строке
+
+extract_loop:
+	cmp	rbx, 0			;проверка, остались ли элементы в куче
+	jle	heap_sort_done		;если rbx <= 0, то отсортирована вся строка
+	
+	;меняем корень с последним элементом (по индексу rbx)
+	mov	rdi, r12		;rdi - адрес строки
+	xor	rsi, rsi		;rsi - корень пирамиды
+	mov	rdx, rbx		;rdx - последний индекс 
+	call 	swap_elements
+	
+	;восстанавливаем свойства кучи для уменьшенного массива
+	mov	rdi, r12		;rdi - адрес строки
+	xor	rsi, rsi
+	mov	rdx, rbx		;rdx - новый размер кучи (уменьшенной на 1)
+	call	heapify
+	
+	dec	rbx			;уменьшаем размер кучи на 1
+	jmp	extract_loop
+
+heap_sort_done:
+        pop     r13
+        pop     r12
+        pop     rbx
+        pop     rbp
+        ret
+
+heapify:
+	push 	rbp			
+	mov 	rbp, rsp
+	push	rbx
+	push 	r12
+	push 	r13
+	push	r14
+	push 	r15
+
+	mov	r12, rdi		;r12 - адрес строки
+	mov	r13, rsi		;r13 - ажрес текущего элемента
+	mov	r14, rdx		;r14 - длина строки
+	
+	mov 	rbx, r15		;rbx - индекс наибольшего элемента
+	
+	;потом вычисляем его потомков
+	mov	r15, r13
+	shl	r15, 1			;r13 = 2*i
+	inc	r15			;r13 = 2*i+1 индекс левого потомка
+	
+	mov 	rcx, r15		;rcx = 2*i+1
+	inc	rcx			;rcx = 2*i+2 индекс правого потомка
+
+	;проверка потомков
+	cmp	r15, r14
+	jge	check_right		;если left >= size, то не проверяем левого потомка, сразу идем на правый
+	
+	movzx	rax, byte [r12 + rbx]	;rax - значение текущего элемента
+	movzx	rdx, byte [r12 + r15]	;rdx - значение левого потомка
+	
+	cmp	byte [sort_direction], 0;выбираем тип сортировки
+	jne	descending_left		;если != 0 то сортируем по убыванию
+
+	;ТУТ СОРТИРУЕМ ПО ВОЗРАСТАНИЮ (MAX кучв)
+	cmp 	al, dl			;сравниваем текущий и левый потомок (младший бит)
+	jge	check_right		;если текущий меньше левого, то оставляем
+
+	;ТУТ ФИКС ЛЕВОГО ПОТОМКА (просто меняем индекс)
+	mov	rbx, r15		;помещаем в rbx индекс левого потомка	(после сравнения с правым потомком обновим элементы)
+	
+	jmp 	check_right
+
+descending_left:	;ПО УБЫВАНИЮ
+	cmp 	al, dl
+	jle	check_right		;если корень <= левого, то все ок
+	mov	rbx, r13		;иначе левый потомок меньше корня, надо обновить индекс
+
+check_right:
+	cmp	rcx, r14
+	jge 	compare			;переходим к сравнению
+	
+	movzx	rax, byte [r12 + rbx]	;rax - значение текущего элемента (или левого потомка если мы его загрузили)
+	movzx 	rdx, byte [r12 + rcx] 	;rdx - значение правого потомка
+
+	cmp	byte [sort_direction], 0
+	jne	descending_right	;ТУТ ХЗ ЧЕ ТВОРИТСЯ
+
+	cmp	al, dl			;сравниваем младшие байты числа и его правого ребенка
+	jge	compare			;если текущий >= правого, то оставляем
+	mov	rbx, rcx		;обновляем индекс корня (корень должен быть больше любого из детей)
+	jmp	compare
+
+descending_right:	;ПО УБЫВАНИЮ
+	cmp	al, dl			;
+	jle	compare			;если текущий <= правого, то оставляем
+	mov	rbx, rcx		;иначе обновляем индекс корня (корень должен быть меньше любого из детей)
+	
+
+compare:	;в этой обалсти мы сравниваем пересчитанные индексы и меняем местами элементы если нужно
+	cmp	rbx, r13 		;если (ТУТ ЧЕТО НЕ ПОНЯЛ ПОЧЕМУ С r13
+	je	heapify_done		;если индекс не поменялся, то свойства кучи сохранены
+	
+	;ИНАЧЕ МЕНЯЕМ ТЕКУЩИЙ УЗЕЛ С НАЙДЕННЫМ МАКСИМАЛЬНЫЙ
+	mov 	rdi, r12		;rdi - адрес строки
+	mov	rsi, r13		;rsi - текущий индекс
+	mov	rdx, rbx		;rdx - новый индекс максимального
+
+	call 	swap_elements		;меняем местами элементы
+
+	;ДАЛЬШЕ НАМ НАДО РЕКУРСИВНО ВЫЗВАТЬ heapify для того поддерева, куда переместился элемент
+	mov	rdi, r12		
+	mov	rsi, rbx		;индекс куда переместили элемент
+	mov	rdx, r14		;rdx - длина строки
+	call 	heapify			;рекурсивно вызываем для поддерева
+
+
+heapify_done:
+	pop	r14
+	pop	r13
+	pop	r12
+	pop	rbx
+	pop	rbp
+	ret
+				
+swap_elements:
+	push 	rax
+	push	rcx	
+
+	mov	al, [rdi + rsi]		;al - значение первого элемента
+	mov 	cl, [rdi + rdx]		;cl - значеине второго элемента
+
+	mov	[rdi + rsi], cl		;записали второе на место первого
+	mov 	[rdi + rdx], al		;записали первое на место второго
+
+
+	pop 	rcx
+	pop	rax
+	ret
+
