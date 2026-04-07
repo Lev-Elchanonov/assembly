@@ -1,7 +1,7 @@
 section .data
 	err_no_env	db "Error: INPUT_FILE environment variable not set", 10, 0
 	err_open_msg	db "Error: cannot open file", 10, 0
-	err_read_msg	db "Error: cannot read file", 10, 0
+	err_read_msg	db "Error: cannot read file\n", 10, 0
 	
 	vowels_up	db "AEIOUY", 0
 	vowels_down 	db "aeiouy", 0
@@ -24,8 +24,6 @@ section .data
 	
 	env_var_name    db "INPUT_FILE", 0
 
-	saved_argc	dq 0
-	saved_argv	dq 0
 	saved_envp	dq 0
 	
 	one_space	db ' '
@@ -183,7 +181,6 @@ flush_output:
 
 ;СРЕДА ОКРУЖЕНИЯ ФУНКЦИИ
 get_env_var:
-	;envp = argv + (argc + 1) * 8
 	mov	rdx, [saved_envp]
 
 	push	rdi	
@@ -239,7 +236,7 @@ get_env_var:
 	
 
 
-;rax - результат сисколов
+;rax - результат сис	колов
 ;rdi - аргумент для get_env_var, system_open, system write
 ;r12 - длина остатка от предидущего буфера
 ;r13 - 0 - вне слова, 1 - внутри слова
@@ -266,8 +263,8 @@ _start:
 ;sys_open(fd(RDI), ORDONLY(RSI), права доступа (rdx))
 .file_found:
 	mov	rsi, OPEN_READONLY	;=0, только на чтение
-	mov	rdx, 0			;без прав доступа
-	mov	rdi, rax		;rax = чтото.txt
+	mov	rdx, 0			;без прав доступа (используется только в CREATE когда создается новый файл)
+ 	mov	rdi, rax		;rax = чтото.txt
 	mov	rax, system_open
 	syscall				;открыли файл
 	
@@ -311,7 +308,7 @@ _start:
 	push	r15
 	
 	mov	rsi, output_buf
-	mov	rcx, rax
+	mov	rcx, rax	;количество символов
 	call 	flush_output	;вывод на экран
 
 	pop	r15
@@ -354,7 +351,7 @@ _start:
 	
 .scan_loop:
 	cmp	rbx, r15
-	jge	.end_of_buffer	;дошли до конца функции
+	jge	.end_of_buffer	;дошли до конца буффера
 	
 	mov	al, [read_buf + rbx]
 	push	rax
@@ -440,7 +437,7 @@ _start:
 	je	.no_leftover	
 	
 	;данные об остатке
-	mov	r12, r9
+	mov	r12, r9		;r9 - длина слова
 	mov	rsi, read_buf
 	add	rsi, r10
 	mov	rdi, leftover
