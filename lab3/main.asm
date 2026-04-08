@@ -3,15 +3,11 @@ section .data
 	err_open_msg	db "Error: cannot open file", 10, 0
 	err_read_msg	db "Error: cannot read file\n", 10, 0
 	
-	vowels_up	db "AEIOUY", 0
-	vowels_down 	db "aeiouy", 0
-	
 	;equ = enum
 	system_read	equ 0	;rdi - file_descriptor, rsi - указатель на данные, rdx - количество байт для чтения
 	system_write	equ 1	;по аналогии
 	system_open	equ 2	
 	system_close	equ 3
-	system_break	equ 12
 	system_exit 	equ 60
 
 	asm_stdin	equ 0
