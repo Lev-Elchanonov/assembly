@@ -240,7 +240,7 @@ get_env_var:
 ;rbx - индекс в бфере read_buf
 _start:	
 	mov	rdx, [rsp]
-	lea	rcx, [rsp + 8*(rdx + 2)]	
+	lea	rcx, [rsp + 8*(rdx + 2)]
 	mov	[saved_envp], rcx
 	
 	mov	rdi, env_var_name
