@@ -5,10 +5,11 @@ section .data
 	mode_write db "w", 0
 	fmt_print_left db "Left side (arccos): %.15f", 10, 0
 	fmt_print_right db "Right side (arccos): %.15f", 10, 0
-	fmt_file db "n = %d, term = %.15f", 10, 0
+	term_output db "n = %d, term = %.15f", 10, 0
 	err_msg db "Error: cant open file", 10, 0
 	err_env db "Error: envp != 2", 10, 0
 	invalid_x_msg db "Error: x must be |x|<=1", 10, 0
+	invalid_eps_msg db "Error: eps must be > 0", 10, 0
 	pi_value dq 1.5707963267948966
 
 section .rodata
@@ -18,78 +19,75 @@ section .bss
 	x resq 1
 	eps resq 1
 	term resq 1
-	sum resq 1
 	factorial_pars resq 1
 	file_handle resq 1
 	n resq 1
 	filename_ptr resq 1
+	left_result resq 1
+	right_result resq 1
 
 section .note.GNU-stack progbits
 
 section .text
-	extern printf, scanf, fopen, fprintf, fclose, exit, pow, fabs
+	extern printf, scanf, fopen, fprintf, fclose, exit, pow, fabs, asin
 	global main
 
 main:
 	push	rbp
 	mov	rbp, rsp
-	sub	rsp, 16
 
 	cmp	edi, 2
 	jne	.error_argv
 	mov	rax, [rsi + 8]
 	mov	[filename_ptr], rax
 
-	; введите x 
 	mov	rdi, fmt_input_x
 	xor	rax, rax
 	call 	printf
 
-	; ввод x
 	mov	rdi, double
 	mov	rsi, x
 	xor	rax, rax
 	call	scanf
 	
 	call	check_x
-	; введите точность
+	
 	mov	rdi, fmt_input_eps
 	xor	rax, rax
 	call 	printf
 
-	; ввод точности
 	mov	rdi, double
 	mov	rsi, eps
 	xor	rax, rax
 	call	scanf
-
 	
+	call	check_eps
+
 	; открытие файла
 	mov	rdi, [filename_ptr]
 	mov	rsi, mode_write
 	call	fopen
 	test	rax, rax
 	jz	.file_error
-	mov	[file_handle], rax
+	mov	[file_handle], rax	;rax - указатель на файл
 
 	
 	; arccos 1ым способом
 	movsd	xmm0, [x]
 	call	arccos_left_compute
-	movsd	[rsp], xmm0
-	
+	movsd	[left_result], xmm0
+
 	; arccos 2ым способом
 	call	compute_series
 
-	
 	mov	rdi, fmt_print_left	
 	mov	rax, 1
-	movsd	xmm0, [rsp]
+	movsd	xmm0, [left_result]
 	call	printf
 	
 	mov	rdi, fmt_print_right
 	mov	rax, 1
-	movsd	xmm0, [sum]
+	movsd	xmm0, [right_result]
 	call	printf
 
 
@@ -97,8 +95,9 @@ main:
 	call	fclose
 	
 	xor	rax, rax
-	leave
+	pop	rbp
 	ret
+
 
 .error_argv:
 	mov	rdi, err_env
@@ -120,37 +119,45 @@ check_x:
 	fld	qword [x]
 	fabs		
 	fcomip	st1	;St(1) = 1.0, St(0) = x
-	ja	.error_x
-	fstp	st0
+	ja	.error_x ;above (|St0| > St1)
+	fstp	st0	;pop St0
 	ret
-
 .error_x:
-	fstp	st0
-	mov	rdi, invalid_x_msg
+	fstp    st0
+	mov     rdi, invalid_x_msg
+	xor     rax, rax
+	call    printf
+	mov     rdi, 1
+	call    exit
+
+
+
+check_eps:
+	movsd	xmm0, [eps]
+	pxor	xmm2, xmm2
+	comisd	xmm0, xmm2
+	jbe	.error_eps	;below or equal
+	ret
+.error_eps:
+	mov	rdi, invalid_eps_msg
 	xor	rax, rax
 	call	printf
 	mov	rdi, 1
-	call	exit
-	
+	call	exit	
 	
 
 arccos_left_compute:
 	sub	rsp, 8
 	movsd	[rsp], xmm0
-	fld qword	[rsp] 	; загрузка в стек FPU значение x St(0) = x
-	fld	st0		; St(1) = x, St(0) = x	
-	fmul	st0, st0	; x * x = x^2. Результат в st0
-	fld1			; St(0) = 1, St(1) = x^2, St(2) = x
-	fsubrp	st1, st0	; St(0) = 1 - x^2, St(1) = x
-	fsqrt			; St(0) = sqrt(1-x^2) 
-	fxch	st1		; St(0) = x, St(1) = sqrt(1-x^2)
-	fpatan			; St(0) = arctan(sqrt(1-x^2), x)
-	fstp qword	[rsp]	; сохранить из стека
-	movsd 	xmm0, [rsp]	
-	add	rsp, 8		
+	fld qword	[rsp]
+	
+	call	asin
+	
+	movsd	xmm1, [pi_value]
+	subsd	xmm1, xmm0
+	movsd	xmm0, xmm1
+	add	rsp, 8
 	ret
-
-
 
 compute_series:
 	push	rbp
@@ -159,12 +166,11 @@ compute_series:
 	
 	mov qword [n], 0
 	pxor	xmm1, xmm1
-	movsd	[sum], xmm1
+	movsd	[right_result], xmm1
 	
 	movsd	xmm0, [x]
-	movsd	[rsp], xmm0	; сохран x
+	movsd	[rsp], xmm0
 
-	pxor	xmm1, xmm1
 	movsd	xmm1, [eps]
 	movsd	[rsp + 40], xmm1
 
@@ -185,7 +191,8 @@ compute_series:
 	mov	rax, [n]
 	add	rax, rax
 	inc	rax
-	cvtsi2sd	xmm0, rax	;конвертит число в rax в число двойной точности и помещает в xmm0
+
+	cvtsi2sd	xmm0, rax
 	mulsd	xmm0, [rsp + 16]	;4^n * (2n + 1)
 	mulsd	xmm0, [rsp + 24]	;4^n * (2n + 1) * (n!)^2
 
@@ -195,40 +202,39 @@ compute_series:
 	mov	rax, [n]
 	add	rax, rax
 	inc	rax			; rax = (2n + 1)
+	
 	call	pow_x			; xmm0 = x^(2n + 1)
 	mulsd	xmm1, xmm0
 	
 	movsd	[term], xmm1
-	
-
 	movsd	xmm0, [term]
+
 	call	fabs
-	movsd	xmm1, [rsp + 40]	;rsp + 40 = eps
+	movsd	xmm1, [rsp + 40]	
 	comisd	xmm0, xmm1
-	jb	.series_done
+	jb	.series_done		;below (xmm0 < xmm1)
 	
 	
 	;запись в файл
 	call	fprintf_call
 
 	;запись члена ряда
-	movsd	xmm0, [sum]
+	movsd	xmm0, [right_result]
 	addsd	xmm0, [term]
-	movsd	[sum], xmm0
+	movsd	[right_result], xmm0
 	
 	inc	qword [n]
 	jmp	.series_loop
 
 .series_done:
-	movsd	xmm0, [sum]
+	movsd	xmm0, [right_result]
 	addsd	xmm0, [term]
-	movsd	[sum], xmm0
-
-	
+	movsd	[right_result], xmm0
 	call	fprintf_call
+
 	movsd	xmm0, [pi_value]
-	subsd	xmm0, [sum]
-	movsd	[sum], xmm0
+	subsd	xmm0, [right_result]
+	movsd	[right_result], xmm0
 	leave
 	ret
 
@@ -238,7 +244,7 @@ fprintf_call:
 	mov	rbp, rsp
 
 	mov     rdi, [file_handle]
-        mov     rsi, fmt_file
+        mov     rsi, term_output
         mov     rdx, [n]
         movsd   xmm0, [term]
         mov     rax, 1
@@ -254,27 +260,27 @@ factorial_2n:
 	mov	rbp, rsp
 	mov	rcx, rax	; rcx = n
 	add	rcx, rcx	; 2n
-	fld1			; St(0) = 1
+	fld1			; St(0) = 1.0
 	mov	rax, 1		
 
 factorial_loop:
 	cmp	rax, rcx
 	jg	factorial_done
 	push	rax
-	fild	qword [rsp]	 ;загрузка целого из стека в FPU; St(0) = счетчик
-	add	rsp, 8	
+	fild qword [rsp]	
+	add	rsp, 8
+	
 	fmulp	st1, st0	; St(1) = St(1) * St(0); Pop St(0)
 	inc	rax	
 	jmp	factorial_loop
 
 factorial_done:
 	sub	rsp, 8
-	fstp	qword [rsp]	;St(0) = значение факториала
+	fstp	qword [rsp]	;кладет St(0) в [rsp]
 	movsd	xmm0, [rsp]	
 	add	rsp, 8
 	pop	rbp
 	ret
-
 
 factorial_n:
 	push	rbp
@@ -285,10 +291,11 @@ factorial_n:
 	jmp	factorial_loop
 
 
+
 pow_4n:
 	push	rbp
 	mov	rbp, rsp
-	mov	rcx, rax	;rcx = n
+	mov	rcx, rax	; rcx = n
 	fld1			; St(0) = 1.0
 	test	rcx, rcx
 	jz	.p4n_done
