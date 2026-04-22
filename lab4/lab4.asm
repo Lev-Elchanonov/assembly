@@ -14,7 +14,7 @@ section .data
 
 section .rodata
 	four dq	4.0
-
+	one  dq 1.0
 section .bss
 	x resq 1
 	eps resq 1
@@ -115,15 +115,13 @@ main:
 
 
 check_x:
-	fld1
-	fld	qword [x]
-	fabs		
-	fcomip	st1	;St(1) = 1.0, St(0) = x
-	ja	.error_x ;above (|St0| > St1)
-	fstp	st0	;pop St0
+	movsd	xmm0, [x]
+	call	fabs
+	movsd	xmm1, [one]
+	comisd	xmm0, xmm1
+	ja	.error_x ;above
 	ret
 .error_x:
-	fstp    st0
 	mov     rdi, invalid_x_msg
 	xor     rax, rax
 	call    printf
@@ -149,7 +147,7 @@ check_eps:
 arccos_left_compute:
 	sub	rsp, 8
 	movsd	[rsp], xmm0
-	fld qword	[rsp]
+	;fld qword	[rsp]
 	
 	call	asin
 	
@@ -199,11 +197,14 @@ compute_series:
 	movsd	xmm1, [rsp + 8]		; xmm1 = (2n)!
 	divsd	xmm1, xmm0		; результат в первый операнд
 
+	
 	mov	rax, [n]
 	add	rax, rax
 	inc	rax			; rax = (2n + 1)
 	
+	movsd	[rsp + 32], xmm1	
 	call	pow_x			; xmm0 = x^(2n + 1)
+	movsd	xmm1, [rsp + 32]
 	mulsd	xmm1, xmm0
 	
 	movsd	[term], xmm1
@@ -260,25 +261,20 @@ factorial_2n:
 	mov	rbp, rsp
 	mov	rcx, rax	; rcx = n
 	add	rcx, rcx	; 2n
-	fld1			; St(0) = 1.0
+	mov	r10, 1
+	cvtsi2sd xmm0, r10
 	mov	rax, 1		
 
-factorial_loop:
+.loop:
 	cmp	rax, rcx
-	jg	factorial_done
-	push	rax
-	fild qword [rsp]	
-	add	rsp, 8
+	jg	.done
+	cvtsi2sd xmm1, rax
+	mulsd	xmm0, xmm1
 	
-	fmulp	st1, st0	; St(1) = St(1) * St(0); Pop St(0)
 	inc	rax	
-	jmp	factorial_loop
+	jmp	.loop
 
-factorial_done:
-	sub	rsp, 8
-	fstp	qword [rsp]	;кладет St(0) в [rsp]
-	movsd	xmm0, [rsp]	
-	add	rsp, 8
+.done:
 	pop	rbp
 	ret
 
@@ -286,36 +282,40 @@ factorial_n:
 	push	rbp
 	mov	rbp, rsp
 	mov	rcx, rax
-	fld1
+	mov	r10, 1
+	cvtsi2sd xmm0, r10
 	mov	rax, 1
-	jmp	factorial_loop
-
+.loop:
+    cmp     rax, rcx
+    jg      .done
+    cvtsi2sd xmm1, rax
+    mulsd   xmm0, xmm1
+    inc     rax
+    jmp     .loop
+.done:
+    pop     rbp
+    ret
 
 
 pow_4n:
 	push	rbp
 	mov	rbp, rsp
 	mov	rcx, rax	; rcx = n
-	fld1			; St(0) = 1.0
+	mov	r10, 1
+	cvtsi2sd xmm0, r10
 	test	rcx, rcx
 	jz	.p4n_done
-	fld	qword	[four]	; St(0) = 4, St(1) = 1.0
+	movsd	xmm1, [four]
 
 .p4n_loop:
 	test	rcx, rcx
-	jz	.after_loop
-	fmul	st1, st0
+	jz	.p4n_done
+	mulsd	xmm0, xmm1
 	dec	rcx
 	jmp	.p4n_loop
 	
-.after_loop:
-	fstp	st0	
-	
+
 .p4n_done:
-	sub	rsp, 8
-	fstp qword [rsp]
-	movsd	xmm0, [rsp]
-	add 	rsp, 8
 	pop	rbp
 	ret
 
@@ -325,26 +325,21 @@ pow_4n:
 pow_x:
 	push	rbp
 	mov	rbp, rsp
-	fld1		; St(0) = 1.0
+	mov	r10, 1
+	cvtsi2sd xmm0, r10
 	test	rax, rax
 	jz	.pow_done
-	fld	qword [x] 	;St(1) = 1.0, St(0) = x
+	movsd	xmm1, [x]
 
 .pow_loop:
 	test 	rax, rax
-	jz	.after_loop
-	fmul	st1, st0		;St(1) = результат; St(0) = x
+	jz	.pow_done
+	mulsd	xmm0, xmm1		
 	dec	rax
 	jmp	.pow_loop
 
-.after_loop:
-	fstp	st0
 
 .pow_done:
-	sub rsp, 8
-	fstp qword [rsp]
-	movsd xmm0, [rsp]
-	add rsp, 8
 	pop	rbp
 	ret
 
