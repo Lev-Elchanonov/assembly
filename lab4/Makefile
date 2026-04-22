@@ -1,19 +1,30 @@
-TARGET = lab4
-ASM_SOURCE = lab4.asm
-OBJ_FILE = lab4.o
+AS = /usr/bin/nasm
+LD = /usr/bin/ld
 
+ASFLAGS = -g -f elf64
+LDFLAGS = -static -z noexecstack
 
-DIR ?= 0
+LIBPATH = -L /lib/gcc/x86_64-linux-gnu/14 -L /lib
+OBJPATH = /usr/lib
+GNUPATH = /usr/lib/x86_64-linux-gnu
 
-all: $(TARGET)
+LIBS = -lgcc -lgcc_eh -lc -lm
 
-$(TARGET): $(OBJ_FILE)
-	gcc -no-pie $< -lm -o $@
+PREOBJ = $(GNUPATH)/crt1.o $(GNUPATH)/crti.o
+POSTOBJ = $(GNUPATH)/crtn.o
 
-$(OBJ_FILE): $(ASM_SOURCE)
-	nasm -f elf64 -g $< -o $@
+SRC = lab4.asm
+OBJ = $(SRC:.asm=.o)
+
+EXE = lab4
+
+all: $(SRC) $(EXE)
 
 clean:
-	rm -f $(OBJ_FILE) $(TARGET)
+	rm -rf $(EXE) $(OBJ)
 
-.PHONY: all clean
+$(EXE): $(OBJ)
+	$(LD) $(LDFLAGS) $(LIBPATH) $(PREOBJ) $(OBJ) $(POSTOBJ) -\( $(LIBS) -\) -o $@
+
+%.o: %.asm
+	$(AS) $(ASFLAGS) $< -o $@
