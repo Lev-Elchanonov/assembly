@@ -232,7 +232,7 @@ edge_detection_asm:
     jmp     .conv_y_loop
 
 .conv_done:
-    mov     rsp, rbp
+    lea     rsp, [rbp - 40]
     pop     r15
     pop     r14
     pop     r13
