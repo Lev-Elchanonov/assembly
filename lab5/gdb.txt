@@ -1,0 +1,22 @@
+Starting program: /home/deracel/assembly_labs/assembly/lab5/edge_detect_asm images/tree.jpg out.jpg
+
+Breakpoint 1, edge_detection_asm () at filter_asm.asm:23
+Continuing.
+
+Breakpoint 2, edge_detection_asm.conv_done () at filter_asm.asm:238
+edge_detection_asm.conv_done () at filter_asm.asm:239
+edge_detection_asm.conv_done () at filter_asm.asm:240
+edge_detection_asm.conv_done () at filter_asm.asm:241
+edge_detection_asm.conv_done () at filter_asm.asm:242
+edge_detection_asm.conv_done () at filter_asm.asm:243
+edge_detection_asm.conv_done () at filter_asm.asm:244
+edge_detection_asm.conv_done () at filter_asm.asm:245
+0x00007fffffffe0bd in ?? ()
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007fffffffe0bd in ?? ()
+
+Program terminated with signal SIGSEGV, Segmentation fault.
+The program no longer exists.
+The program is not being run.
+The program is not being run.

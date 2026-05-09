@@ -90,7 +90,7 @@ edge_detection_asm:
 .pad_y_max:
     cmp     rax, [height]
     jl      .src_y_okey
-    mov     r10, height
+    mov     r10, [height]
     lea     rax, [r10 - 1]
 .src_y_okey:
     mov     rsi, rax            ;rsi = src_y
@@ -99,28 +99,25 @@ edge_detection_asm:
     imul    rax, [width]
     add     rax, rdi
     imul    rax, [channels]
-    push    rax
+    mov     r15, rax
 
     ;rax = (y_padded * padded_width + x_padded) * channels
     mov     rax, rcx        ;y_padded
     imul    rax, [padded_width]
     add     rax, rdx        ; + x_padded
     imul    rax, [channels]
-    mov     rsi, rax        ;rsi = padded_address
 
-    pop     rax
-    push    rsi             ;padded_address in stack
 
-    lea     rsi, [input_reg + rax]
 
-    pop     rax             ;src_address
+    lea     rsi, [input_reg + r15]
+
     lea     rdi, [r11 + rax]
 
     push    rcx
     push    rdx
 
     xor     rcx, rcx
-    mov     rcx, [channels]
+    mov     ecx, dword [channels]
     rep     movsb            ;копирует 1 байт из rsi в rdi
 
     pop     rdx
@@ -135,7 +132,7 @@ edge_detection_asm:
 .pad_done:
     ;светрка
 
-    movsxd   rbx, dword [channels]
+    mov     rbx, [channels]
     xor     rcx, rcx        ;y = 0
 
 
