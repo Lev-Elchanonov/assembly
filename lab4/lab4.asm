@@ -147,8 +147,6 @@ check_eps:
 arccos_left_compute:
 	sub	rsp, 8
 	movsd	[rsp], xmm0
-	;fld qword	[rsp]
-	
 	call	asin
 	
 	movsd	xmm1, [pi_value]
@@ -259,12 +257,12 @@ fprintf_call:
 factorial_2n:
 	push	rbp
 	mov	rbp, rsp
+
 	mov	rcx, rax	; rcx = n
 	add	rcx, rcx	; 2n
 	mov	r10, 1
 	cvtsi2sd xmm0, r10
 	mov	rax, 1		
-
 .loop:
 	cmp	rax, rcx
 	jg	.done
@@ -273,33 +271,35 @@ factorial_2n:
 	
 	inc	rax	
 	jmp	.loop
-
 .done:
 	pop	rbp
 	ret
 
+
 factorial_n:
 	push	rbp
 	mov	rbp, rsp
+
 	mov	rcx, rax
 	mov	r10, 1
 	cvtsi2sd xmm0, r10
 	mov	rax, 1
 .loop:
-    cmp     rax, rcx
-    jg      .done
-    cvtsi2sd xmm1, rax
-    mulsd   xmm0, xmm1
-    inc     rax
-    jmp     .loop
+	cmp     rax, rcx
+	jg      .done
+	cvtsi2sd xmm1, rax
+	mulsd   xmm0, xmm1
+	inc     rax
+	jmp     .loop
 .done:
-    pop     rbp
-    ret
+	pop     rbp
+	ret
 
 
 pow_4n:
 	push	rbp
 	mov	rbp, rsp
+
 	mov	rcx, rax	; rcx = n
 	mov	r10, 1
 	cvtsi2sd xmm0, r10
@@ -313,8 +313,6 @@ pow_4n:
 	mulsd	xmm0, xmm1
 	dec	rcx
 	jmp	.p4n_loop
-	
-
 .p4n_done:
 	pop	rbp
 	ret
@@ -325,20 +323,18 @@ pow_4n:
 pow_x:
 	push	rbp
 	mov	rbp, rsp
+
 	mov	r10, 1
 	cvtsi2sd xmm0, r10
 	test	rax, rax
 	jz	.pow_done
 	movsd	xmm1, [x]
-
 .pow_loop:
 	test 	rax, rax
 	jz	.pow_done
 	mulsd	xmm0, xmm1		
 	dec	rax
 	jmp	.pow_loop
-
-
 .pow_done:
 	pop	rbp
 	ret
