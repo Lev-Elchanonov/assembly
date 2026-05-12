@@ -28,8 +28,7 @@ void edge_detection_c(unsigned char* input, unsigned char* output, int width, in
                 src_y = height - 1;
 
             for (int c = 0; c < channels; c++) {
-                padded_img[(y * padded_width + x) * channels + c] =
-                    input[(src_y * width + src_x) * channels + c];
+                padded_img[(y * padded_width + x) * channels + c] = input[(src_y * width + src_x) * channels + c];
             }
         }
     }

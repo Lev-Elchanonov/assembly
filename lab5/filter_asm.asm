@@ -49,8 +49,8 @@ edge_detection_asm:
     imul    rax, [padded_height]
     imul    rax, [channels]
 
-    add     rax, 15
-    and     rax, -16
+    add     rax, 15             ;нужно для округления вверх (перескок к след. числу, кратному 16)
+    and     rax, -16            ;-16 = 1111 0000 (обнулим младшие 4 бита для выравнивания стека)
     sub     rsp, rax
     mov     r11, rsp
 
@@ -118,7 +118,7 @@ edge_detection_asm:
 
     xor     rcx, rcx
     mov     ecx, dword [channels]
-    rep     movsb            ;копирует 1 байт из rsi в rdi
+    rep     movsb            ;копирует 1 байт из rsi в rdi, потом rsi++ rdi++
 
     pop     rdx
     pop     rcx

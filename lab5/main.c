@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
     if (!stbi_write_jpg(output_filename, width_, height_, channels_, output_image, 95)) {
         fprintf(stderr, "Error: Can not safe image '%s'\n", output_filename);
     } else {
-        fprintf(stdout, "Success");
+        fprintf(stdout, "Success\n");
     }
     stbi_image_free(image);
     free(output_image);
