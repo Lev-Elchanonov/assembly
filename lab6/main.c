@@ -52,17 +52,20 @@ int main(int argc, char* argv[]) {
     clock_t start, end;
     double time_used;
 
-    start = clock();
 
 #ifdef USE_ASM
+    start = clock();
     sobel_asm(image, output_image, width_, height_, channels_);
-#elif defined(USE_SIMD)
-    sobel_simd(image, output_image, width_, height_, channels_);
-#else
-    sobel_c(image, output_image, width_, height_, channels_);
-#endif
-
     end = clock();
+#elif defined(USE_SIMD)
+    start = clock();
+    sobel_simd(image, output_image, width_, height_, channels_);
+    end = clock();
+#else
+    start = clock();
+    sobel_c(image, output_image, width_, height_, channels_);
+    end = clock();
+#endif
 
     time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
     printf("Processing time: %.4f s\n", time_used);

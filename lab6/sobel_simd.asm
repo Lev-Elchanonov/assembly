@@ -1,27 +1,36 @@
 global sobel_simd
 
 section .bss
-    width:  resq 1
-    height: resq 1
-    padded_width: resq 1
-    padded_height: resq 1
-    channels: resq 1
-    sum_x: resq 1
-    sum_y: resq 1
+    width:          resq 1
+    height:         resq 1
+    padded_width:   resq 1
+    padded_height:  resq 1
+    channels:       resq 1
 
 section .rodata
-    Gx_row0:  db  -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1
-    Gx_row1:  db  -2, 0, 2, -2, 0, 2, -2, 0, 2, -2, 0, 2, -2, 0, 2, -2
-    Gx_row2:  db  -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1
+    align 16
+    gx_words: dw -1, 0, 1, -2, 0, 2, -1, 0, 1
+    ;gx_last:  dw 1
 
-    Gy_row0:  db   1, 2, 1,  1, 2, 1,  1, 2, 1,  1, 2, 1,  1, 2, 1,  1
-    Gy_row1:  db   0, 0, 0,  0, 0, 0,  0, 0, 0,  0, 0, 0,  0, 0, 0,  0
-    Gy_row2:  db  -1,-2,-1, -1,-2,-1, -1,-2,-1, -1,-2,-1, -1,-2,-1, -1
+    align 16
+    gy_words: dw 1, 2, 1, 0, 0, 0, -1, -2, -1
+    ;gy_last:  dw -1
+
+    align 16
+    abs_mask: dq 0x7FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF
 
 section .text
 
 %define input_reg  r12
 %define output_reg r13
+
+; void sobel_simd(unsigned char* input,
+;                 unsigned char* output,
+;                 int width,
+;                 int height,
+;                 int channels)
+
+
 
 sobel_simd:
     push    rbp
@@ -121,7 +130,7 @@ sobel_simd:
     push    rdx
 
     xor     rcx, rcx
-    mov     ecx, dword [channels]
+    mov     rcx, [channels]
     rep     movsb            ;копирует 1 байт из rsi в rdi, потом rsi++ rdi++
 
     pop     rdx
@@ -142,278 +151,234 @@ sobel_simd:
 
 
 
-.conv_y_loop:
+.y_loop:
     cmp     rcx, [height]
-    jge     .conv_done
-    xor     rdx, rdx           ; x = 0
+    jge     .finish
 
-.conv_x_loop:
+    xor     rdx, rdx
+
+.x_loop:
     cmp     rdx, [width]
-    jge     .conv_x_done
-    xor     r8, r8             ; c = 0
+    jge     .next_row
+
+    xor     r8, r8
 
 .channel_loop:
     cmp     r8, rbx
-    jge     .channel_done
+    jge     .next_x
 
-    ; --- Адреса трёх строк padded_img для канала c ---
+    ; ------------------------------------------------------------
+    ; Загружаем 9 пикселей окна 3x3
+    ; p0 p1 p2
+    ; p3 p4 p5
+    ; p6 p7 p8
+    ; ------------------------------------------------------------
+
+    sub     rsp, 32
+    pxor    xmm0, xmm0
+    movdqu  [rsp], xmm0
+    movdqu  [rsp + 16], xmm0
+    xor     r9, r9
+
+.load_rows:
+    cmp     r9, 3
+    jge     .pixels_loaded
+
+    xor     r10, r10
+
+.load_cols:
+    cmp     r10, 3
+    jge     .next_load_row
+
     mov     rax, rcx
-    mov     r10, [padded_width]
-    imul    rax, r10
-    mov     r10, [channels]
-    imul    rax, r10
+    add     rax, r9
+
+    imul    rax, [padded_width]
+
+    mov     r14, rdx
+    add     r14, r10
+
+    add     rax, r14
+    imul    rax, [channels]
     add     rax, r8
-    lea     r14, [r11 + rax]   ; r14 = &padded[y][0][c]
 
-    mov     r10, [padded_width]
-    imul    r10, [channels]    ; шаг строки в байтах
-    lea     r15, [r14 + r10]   ; r15 = &padded[y+1][0][c]
-    lea     r9, [r15 + r10]    ; r9  = &padded[y+2][0][c]
+    movzx   r15d, byte [r11 + rax]
 
-    ; --- Цикл по x с шагом 16 ---
-    mov     rsi, rdx           ; rsi = текущий x
-    mov     rdi, [width]
-    sub     rdi, rdx           ; rdi = осталось пикселей
+    mov     r14, r9
+    imul    r14, 3
+    add     r14, r10
 
-.simd_x_loop:
-    cmp     rdi, 16
-    jl      .simd_rest
+    mov     word [rsp + r14 * 2], r15w
 
-    ; ===== 16 ПИКСЕЛЕЙ ЗА РАЗ =====
-    mov     rax, rsi
-    mov     r10, [channels]
-    imul    rax, r10           ; смещение в байтах до x
+    inc     r10
+    jmp     .load_cols
 
-    movdqu  xmm0, [r14 + rax]  ; строка y
-    movdqu  xmm1, [r15 + rax]  ; строка y+1
-    movdqu  xmm2, [r9 + rax]   ; строка y+2
+.next_load_row:
+    inc     r9
+    jmp     .load_rows
 
-    ; Распаковка байт → слова
-    pxor    xmm7, xmm7
-    movdqa  xmm3, xmm0
-    punpcklbw xmm0, xmm7
-    punpckhbw xmm3, xmm7
-    movdqa  xmm4, xmm1
-    punpcklbw xmm1, xmm7
-    punpckhbw xmm4, xmm7
-    movdqa  xmm5, xmm2
-    punpcklbw xmm2, xmm7
-    punpckhbw xmm5, xmm7
+.pixels_loaded:
 
-    ; --- Gx: младшие 8 ---
-    movdqa  xmm6, xmm0
-    pmullw  xmm6, [Gx_row0]
-    movdqa  xmm8, xmm1
-    pmullw  xmm8, [Gx_row1]
-    paddw   xmm6, xmm8
-    movdqa  xmm8, xmm2
-    pmullw  xmm8, [Gx_row2]
-    paddw   xmm6, xmm8         ; xmm6 = sum_x (младшие 8)
+    ; ------------------------------------------------------------
+    ; SIMD вычисление Gx
+    ; ------------------------------------------------------------
 
-    ; --- Gx: старшие 8 ---
-    movdqa  xmm10, xmm3
-    pmullw  xmm10, [Gx_row0]
-    movdqa  xmm8, xmm4
-    pmullw  xmm8, [Gx_row1]
-    paddw   xmm10, xmm8
-    movdqa  xmm8, xmm5
-    pmullw  xmm8, [Gx_row2]
-    paddw   xmm10, xmm8        ; xmm10 = sum_x (старшие 8)
+    pxor    xmm0, xmm0
+    movdqu  xmm1, [rsp]
+    movdqa  xmm2, [rel gx_words]
 
-    ; --- Gy: младшие 8 ---
-    movdqa  xmm11, xmm0
-    pmullw  xmm11, [Gy_row0]
-    movdqa  xmm8, xmm1
-    pmullw  xmm8, [Gy_row1]
-    paddw   xmm11, xmm8
-    movdqa  xmm8, xmm2
-    pmullw  xmm8, [Gy_row2]
-    paddw   xmm11, xmm8        ; xmm11 = sum_y (младшие 8)
+    pmullw  xmm1, xmm2
 
-    ; --- Gy: старшие 8 ---
-    movdqa  xmm12, xmm3
-    pmullw  xmm12, [Gy_row0]
-    movdqa  xmm8, xmm4
-    pmullw  xmm8, [Gy_row1]
-    paddw   xmm12, xmm8
-    movdqa  xmm8, xmm5
-    pmullw  xmm8, [Gy_row2]
-    paddw   xmm12, xmm8        ; xmm12 = sum_y (старшие 8)
+    xor     eax, eax
 
-    ; --- |sum_x| + |sum_y| ---
-    pabsw   xmm6, xmm6
-    pabsw   xmm10, xmm10
-    pabsw   xmm11, xmm11
-    pabsw   xmm12, xmm12
-    paddw   xmm6, xmm11
-    paddw   xmm10, xmm12
+    pextrw  r14d, xmm1, 0
+    movsx   r14d, r14w
+    add     eax, r14d
 
-    ; --- Упаковка слов в байты с насыщением (clamp 0..255) ---
-    packuswb xmm6, xmm10
+    pextrw  r14d, xmm1, 1
+    movsx   r14d, r14w
+    add     eax, r14d
 
-    ; --- Сохранение 16 байт ---
-    mov     rax, rcx
-    mov     r10, [width]
-    imul    rax, r10
-    add     rax, rsi
-    mov     r10, [channels]
-    imul    rax, r10
-    add     rax, r8
-    movdqu  [output_reg + rax], xmm6
+    pextrw  r14d, xmm1, 2
+    movsx   r14d, r14w
+    add     eax, r14d
 
-    add     rsi, 16
-    sub     rdi, 16
-    jmp     .simd_x_loop
+    pextrw  r14d, xmm1, 3
+    movsx   r14d, r14w
+    add     eax, r14d
 
-.simd_rest:
-    cmp     rdi, 0
-    jle     .simd_channel_done
+    pextrw  r14d, xmm1, 4
+    movsx   r14d, r14w
+    add     eax, r14d
 
-    mov     qword [sum_x], 0
-    mov     qword [sum_y], 0
+    pextrw  r14d, xmm1, 5
+    movsx   r14d, r14w
+    add     eax, r14d
 
-    mov     rax, rsi
-    mov     r10, [channels]
-    imul    rax, r10
+    pextrw  r14d, xmm1, 6
+    movsx   r14d, r14w
+    add     eax, r14d
+
+    pextrw  r14d, xmm1, 7
+    movsx   r14d, r14w
+    add     eax, r14d
+
+    movsx   r14d, word [rsp + 16]
+    movsx   r15d, word [rel gx_words + 16]
+    imul    r14d, r15d
+    add     eax, r14d
+
+    mov     r14d, eax
 
 
-    movzx   r10d, byte [r14 + rax]
-    movsx   r11d, byte [Gx_row0]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row0]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    ; ------------------------------------------------------------
+    ; SIMD вычисление Gy
+    ; ------------------------------------------------------------
 
-    ; ky=0, kx=1
-    movzx   r10d, byte [r14 + rax + 3]
-    movsx   r11d, byte [Gx_row0 + 1]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row0 + 1]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    movdqu  xmm3, [rsp]
+    movdqa  xmm4, [rel gy_words]
 
-    ; ky=0, kx=2
-    movzx   r10d, byte [r14 + rax + 6]
-    movsx   r11d, byte [Gx_row0 + 2]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row0 + 2]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    pmullw  xmm3, xmm4
 
-    ; ky=1, kx=0
-    movzx   r10d, byte [r15 + rax]
-    movsx   r11d, byte [Gx_row1]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row1]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    xor     eax, eax
 
-    ; ky=1, kx=1
-    movzx   r10d, byte [r15 + rax + 3]
-    movsx   r11d, byte [Gx_row1 + 1]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row1 + 1]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    pextrw  r15d, xmm3, 0
+    movsx   r15d, r15w
+    add     eax, r15d
 
-    ; ky=1, kx=2
-    movzx   r10d, byte [r15 + rax + 6]
-    movsx   r11d, byte [Gx_row1 + 2]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row1 + 2]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    pextrw  r15d, xmm3, 1
+    movsx   r15d, r15w
+    add     eax, r15d
 
-    ; ky=2, kx=0
-    movzx   r10d, byte [r9 + rax]
-    movsx   r11d, byte [Gx_row2]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row2]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    pextrw  r15d, xmm3, 2
+    movsx   r15d, r15w
+    add     eax, r15d
 
-    ; ky=2, kx=1
-    movzx   r10d, byte [r9 + rax + 3]
-    movsx   r11d, byte [Gx_row2 + 1]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row2 + 1]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    pextrw  r15d, xmm3, 3
+    movsx   r15d, r15w
+    add     eax, r15d
 
-    ; ky=2, kx=2
-    movzx   r10d, byte [r9 + rax + 6]
-    movsx   r11d, byte [Gx_row2 + 2]
-    imul    r11d, r10d
-    add     [sum_x], r11
-    movsx   r11d, byte [Gy_row2 + 2]
-    imul    r11d, r10d
-    add     [sum_y], r11
+    pextrw  r15d, xmm3, 4
+    movsx   r15d, r15w
+    add     eax, r15d
 
-    ; magnitude = |sum_x| + |sum_y|
-    mov     r10, [sum_x]
-    mov     rax, r10
-    sar     rax, 63
-    xor     r10, rax
-    sub     r10, rax           ; r10 = |sum_x|
+    pextrw  r15d, xmm3, 5
+    movsx   r15d, r15w
+    add     eax, r15d
 
-    mov     rax, [sum_y]
-    mov     rdi, rax           ; ← rdi (он уже не нужен после dec rdi)
-    sar     rdi, 63
-    xor     rax, rdi
-    sub     rax, rdi           ; rax = |sum_y|
+    pextrw  r15d, xmm3, 6
+    movsx   r15d, r15w
+    add     eax, r15d
 
-    add     r10d, eax          ; magnitude
+    pextrw  r15d, xmm3, 7
+    movsx   r15d, r15w
+    add     eax, r15d
 
-    ; clamp
-    test    r10d, r10d
-    jns     .rest_check_max
-    xor     r10d, r10d
-    jmp     .rest_store
-.rest_check_max:
-    cmp     r10d, 255
-    jle     .rest_store
-    mov     r10d, 255
+    movsx   r15d, word [rsp + 16]
+    movsx   r9d, word [rel gy_words + 16]
+    imul    r15d, r9d
+    add     eax, r15d
 
-.rest_store:
-    mov     rax, rcx
-    mov     rdi, [width]       ; ← rdi
-    imul    rax, rdi
-    add     rax, rsi
-    mov     rdi, [channels]    ; ← rdi
-    imul    rax, rdi
-    add     rax, r8
-    mov     byte [output_reg + rax], r10b
+    mov     r15d, eax
 
-    inc     rsi
-    dec     rdi
-    jmp     .simd_rest
+    add     rsp, 32
 
-.simd_channel_done:
+    ; ------------------------------------------------------------
+    ; magnitude = abs(sum_x) + abs(sum_y)
+    ; ------------------------------------------------------------
+
+    mov     eax, r14d
+    mov     r9d, eax
+    sar     r9d, 31
+    xor     eax, r9d
+    sub     eax, r9d
+
+    mov     esi, eax
+
+    mov     eax, r15d
+    mov     r9d, eax
+    sar     r9d, 31
+    xor     eax, r9d
+    sub     eax, r9d
+
+    add     eax, esi
+
+
+    cmp     eax, 255
+    jle     .store_pixel
+
+    mov     eax, 255
+
+.store_pixel:
+
+    mov     rsi, rcx
+    imul    rsi, [width]
+    add     rsi, rdx
+    imul    rsi, [channels]
+    add     rsi, r8
+
+    mov     byte [output_reg + rsi], al
+
     inc     r8
     jmp     .channel_loop
 
-.channel_done:
+.next_x:
     inc     rdx
-    jmp     .conv_x_loop
+    jmp     .x_loop
 
-.conv_x_done:
+.next_row:
     inc     rcx
-    jmp     .conv_y_loop
+    jmp     .y_loop
 
-.conv_done:
+.finish:
+    ;mov     rsp, rbp
     lea     rsp, [rbp - 40]
+
     pop     r15
     pop     r14
     pop     r13
     pop     r12
     pop     rbx
     pop     rbp
+
     ret
