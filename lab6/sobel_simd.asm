@@ -13,10 +13,6 @@ section .text
 %define input_reg  r12
 %define output_reg r13
 
-; ------------------------------------------------------------
-; FAST SIMD Sobel
-; Processes 8 pixels simultaneously with SSE2
-; ------------------------------------------------------------
 
 sobel_simd:
     push    rbp
@@ -132,7 +128,8 @@ sobel_simd:
     ;светрка
 
     mov     rbx, [channels]
-    mov     rcx, 1        ;y = 0
+    mov     rcx, 1
+
 
 
 .y_loop:
@@ -141,16 +138,16 @@ sobel_simd:
     cmp     rcx, rax
     jge     .finish
 
-    mov     rdx, 1            ; x = 1 (пропускаем край)
+    mov     rdx, 1
 
 .x_loop:
     mov     rax, [width]
     dec     rax
     sub     rax, 8
     cmp     rdx, rax
-    jge     .next_row
+    jge      .next_row
 
-    ; --- Адреса строк в padded_img ---
+
     mov     r8, rcx
     dec     r8
     imul    r8, [padded_width]      ; row0 = (y-1) * padded_width
@@ -168,10 +165,18 @@ sobel_simd:
 
     pxor    xmm15, xmm15            ; xmm15 = 0 (для распаковки)
 
-    ; ===== Gx =====
+    ;Gx = (-1)·p(-1,-1) + (0)·p(0,-1) + (+1)·p(1,-1) +
+    ;     (-2)·p(-1,0)  + (0)·p(0,0)  + (+2)·p(1,0)  +
+    ;     (-1)·p(-1,1)  + (0)·p(0,1)  + (+1)·p(1,1)
 
-    ; --- Загружаем левый и правый столбцы ---
-    movdqu  xmm0, [r11 + r8 - 1]    ; top-left
+    ;Gy = (+1)·p(-1,-1) + (+2)·p(0,-1) + (+1)·p(1,-1) +
+    ;     (0) ·p(-1,0)  + (0) ·p(0,0)  + (0) ·p(1,0)  +
+    ;     (-1)·p(-1,1)  + (-2)·p(0,1)  + (-1)·p(1,1)
+
+    ;magnitude = |Gx| + |Gy|
+
+    ; ОБРАБОТКА GX
+    movdqu  xmm0, [r11 + r8 - 1]    ; top-left      $
     movdqu  xmm2, [r11 + r8 + 1]    ; top-right
     movdqu  xmm3, [r11 + r9 - 1]    ; mid-left
     movdqu  xmm5, [r11 + r9 + 1]    ; mid-right
@@ -180,36 +185,36 @@ sobel_simd:
 
     ; --- Распаковка: байты → слова ---
     ; top-right - top-left
-    movdqa  xmm9, xmm2
-    punpcklbw xmm2, xmm15           ; младшие 8: слова
-    punpckhbw xmm9, xmm15           ; старшие 8: слова
-    movdqa  xmm10, xmm0
-    punpcklbw xmm0, xmm15
-    punpckhbw xmm10, xmm15
-    psubw   xmm2, xmm0              ; top_right - top_left (младшие)
+    movdqa  xmm9, xmm2              ;для копирования регистров xmm
+    punpcklbw xmm2, xmm15           ; младшие 8: слова  (берет младшие 8 байти и чередует их)
+    punpckhbw xmm9, xmm15           ; старшие 8: слова  (берет старшие 8 байт и чередует их)
+    movdqa  xmm10, xmm0             ; top left
+    punpcklbw xmm0, xmm15           ; младшие 8 слов
+    punpckhbw xmm10, xmm15          ; старшие 8 слов
+    psubw   xmm2, xmm0              ; top_right - top_left (младшие)    (packed substract words - вычитание 88 знаковых слов) (из каждого слова в xmm2 вычитается каждое слово в xmm0)
     psubw   xmm9, xmm10             ; top_right - top_left (старшие)
 
     ; 2 * (mid_right - mid_left)
-    movdqa  xmm11, xmm5
-    punpcklbw xmm5, xmm15
-    punpckhbw xmm11, xmm15
-    movdqa  xmm12, xmm3
-    punpcklbw xmm3, xmm15
-    punpckhbw xmm12, xmm15
-    psubw   xmm5, xmm3              ; mid_right - mid_left
-    psubw   xmm11, xmm12
-    paddw   xmm5, xmm5              ; *2
-    paddw   xmm11, xmm11
+    movdqa  xmm11, xmm5             ; mid right
+    punpcklbw xmm5, xmm15           ; младшие 8 слов
+    punpckhbw xmm11, xmm15          ; старшие 8 слов
+    movdqa  xmm12, xmm3             ; mid left
+    punpcklbw xmm3, xmm15           ; младшие 8 слов
+    punpckhbw xmm12, xmm15          ; старшие 8 слов
+    psubw   xmm5, xmm3              ; mid_right - mid_left (младшие)
+    psubw   xmm11, xmm12            ; mid_right - mid_left (старшие)
+    paddw   xmm5, xmm5              ; *2 (младшие)
+    paddw   xmm11, xmm11            ; *2 (старшие)
 
     ; bot_right - bot_left
-    movdqa  xmm13, xmm8
-    punpcklbw xmm8, xmm15
-    punpckhbw xmm13, xmm15
-    movdqa  xmm14, xmm6
-    punpcklbw xmm6, xmm15
-    punpckhbw xmm14, xmm15
-    psubw   xmm8, xmm6
-    psubw   xmm13, xmm14
+    movdqa  xmm13, xmm8             ; bot right
+    punpcklbw xmm8, xmm15           ; младшие 8 слов
+    punpckhbw xmm13, xmm15          ; старшие 8 слов
+    movdqa  xmm14, xmm6             ; bot left
+    punpcklbw xmm6, xmm15           ; младшие 8 слов
+    punpckhbw xmm14, xmm15          ; старшие 8 слов
+    psubw   xmm8, xmm6              ; bot_right - bot_left (младшие)
+    psubw   xmm13, xmm14            ; bot_right - bot_left (старшие)
 
     ; Суммируем Gx
     paddw   xmm2, xmm5
@@ -219,39 +224,43 @@ sobel_simd:
 
     ; ===== Gy =====
 
-    ; top_row = top_left + top_mid + top_right
-    movdqu  xmm0, [r11 + r8 - 1]
-    movdqu  xmm1, [r11 + r8]
-    movdqu  xmm4, [r11 + r8 + 1]
+    ; top_row = top_left + 2*top_mid + top_right
+    movdqu  xmm0, [r11 + r8 - 1]    ; top_left
+    movdqu  xmm1, [r11 + r8]        ; top_mid
+    movdqu  xmm4, [r11 + r8 + 1]    ; top_right
     movdqa  xmm5, xmm0
-    punpcklbw xmm0, xmm15
-    punpckhbw xmm5, xmm15
+    punpcklbw xmm0, xmm15           ; top_left (младшие 8)
+    punpckhbw xmm5, xmm15           ; top_left (старшие 8)
     movdqa  xmm6, xmm1
-    punpcklbw xmm1, xmm15
-    punpckhbw xmm6, xmm15
-    paddw   xmm0, xmm1
-    paddw   xmm5, xmm6
+    punpcklbw xmm1, xmm15           ; top_mid (младшие 8)
+    punpckhbw xmm6, xmm15           ; top_mid (старшие 8)
+    paddw   xmm1, xmm1              ; 2*top_mid (младшие)
+    paddw   xmm6, xmm6              ; 2*top_mid (старише)
+    paddw   xmm0, xmm1              ; top_left + top_mid (в младших)
+    paddw   xmm5, xmm6              ; top_left + top_mid (в старших)
     movdqa  xmm7, xmm4
-    punpcklbw xmm4, xmm15
-    punpckhbw xmm7, xmm15
+    punpcklbw xmm4, xmm15           ; top_right (младшие 8)
+    punpckhbw xmm7, xmm15           ; top_right (старшие 8)
     paddw   xmm0, xmm4              ; top_sum (младшие)
     paddw   xmm5, xmm7              ; top_sum (старшие)
 
-    ; bot_row = bot_left + bot_mid + bot_right
-    movdqu  xmm10, [r11 + r10 - 1]
-    movdqu  xmm11, [r11 + r10]
-    movdqu  xmm12, [r11 + r10 + 1]
+    ; bot_row = bot_left + 2*bot_mid + bot_right
+    movdqu  xmm10, [r11 + r10 - 1]  ; bot_left
+    movdqu  xmm11, [r11 + r10]      ; bot_mid
+    movdqu  xmm12, [r11 + r10 + 1]  ; bot_right
     movdqa  xmm13, xmm10
-    punpcklbw xmm10, xmm15
-    punpckhbw xmm13, xmm15
+    punpcklbw xmm10, xmm15          ; bot_left (младшие 8)
+    punpckhbw xmm13, xmm15          ; bot_left (старшие 8)
     movdqa  xmm14, xmm11
-    punpcklbw xmm11, xmm15
-    punpckhbw xmm14, xmm15
-    paddw   xmm10, xmm11
-    paddw   xmm13, xmm14
+    punpcklbw xmm11, xmm15          ; bot_mid (младшие 8)
+    punpckhbw xmm14, xmm15          ; bot_mid (старшие 8)
+    paddw   xmm11, xmm11            ; 2*bot_mid (младшие)
+    paddw   xmm14, xmm14            ; 2*bot_mid (старшие)
+    paddw   xmm10, xmm11            ; bot_left + 2*bot_mid (младшие)
+    paddw   xmm13, xmm14            ; bot_left + 2*bot_mid (старшие)
     movdqa  xmm1, xmm12
-    punpcklbw xmm12, xmm15
-    punpckhbw xmm1, xmm15
+    punpcklbw xmm12, xmm15          ; bot_right (младшие)
+    punpckhbw xmm1, xmm15           ; bot_right (старшие)
     paddw   xmm10, xmm12            ; bot_sum (младшие)
     paddw   xmm13, xmm1             ; bot_sum (старшие)
 
@@ -259,28 +268,26 @@ sobel_simd:
     psubw   xmm0, xmm10             ; Gy (младшие)
     psubw   xmm5, xmm13             ; Gy (старшие)
 
-    ; ===== |Gx| =====
+    ; Модуль Gx
     pabsw   xmm2, xmm2
     pabsw   xmm9, xmm9
 
-    ; ===== |Gy| =====
+    ; Модуль Gy
     pabsw   xmm0, xmm0
     pabsw   xmm5, xmm5
 
-    ; ===== |Gx| + |Gy| =====
+    ; Модуль Gx + Модуль Gy
     paddw   xmm2, xmm0
     paddw   xmm9, xmm5
 
-    ; ===== Упаковка слов в байты (clamp 0-255) =====
-    packuswb xmm2, xmm9             ; xmm2 = 16 байт результата
+    packuswb xmm2, xmm9             ; Конвертация слов в байты
 
-    ; --- Сохранение ---
     mov     r14, rcx
     imul    r14, [width]
-    add     r14, rdx
+    add     r14, rdx                ; r14 = y * width + x
     movdqu  [output_reg + r14], xmm2
 
-    add     rdx, 8                  ; 8 пикселей за раз (16 байт = 8 слов)
+    add     rdx, 16                  ; 16 пикселей за раз (16 байт = 8 слов)
     jmp     .x_loop
 
 .next_row:
