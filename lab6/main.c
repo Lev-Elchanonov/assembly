@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
 #endif
 
     time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
-    printf("Processing time: %.4f s\n", time_used);
+    printf("Processing time: %.6f s\n", time_used);
 
     if (!stbi_write_jpg(output_filename, width_, height_, channels_, output_image, 95)) {
         fprintf(stderr, "Error saving image '%s'\n", output_filename);
