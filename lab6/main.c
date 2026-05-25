@@ -23,14 +23,14 @@ int main(int argc, char* argv[]) {
     const char* output_filename = argv[2];
 
     int width_, height_, channels_;
-    unsigned char* image = stbi_load(input_filename, &width_, &height_, &channels_, 3);
+    unsigned char* image = stbi_load(input_filename, &width_, &height_, &channels_, 1);
 
     if (!image) {
         fprintf(stderr, "Error loading image '%s'\n", input_filename);
         fprintf(stderr, "Reason: %s\n", stbi_failure_reason());
         return 1;
     }
-    channels_ = 3;
+    channels_ = 1;
 
     printf("Image loaded: %dx%d, channels: %d\n", width_, height_, channels_);
     printf("Version: ");
@@ -77,9 +77,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    printf("Successfully saved to '%s'\n", output_filename);
 
     stbi_image_free(image);
     free(output_image);
+
+
     return 0;
 }
+

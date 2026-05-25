@@ -119,3 +119,5 @@ $(OBJDIR)/main_simd.o: $(C_MAIN) | $(OBJDIR)
 
 $(OBJDIR)/sobel_simd.o: $(SIMD_FILTER) | $(OBJDIR)
 	$(AS) $(ASFLAGS) $< -o $@
+
+
